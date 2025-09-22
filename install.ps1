@@ -31,7 +31,6 @@ Write-Host "===============================================" -ForegroundColor Cy
 Write-Host ""
 
 $SourceFile = Join-Path $PSScriptRoot "llogin.ps1"
-$SourceCmdFile = Join-Path $PSScriptRoot "llogin.cmd"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\llogin"
 $TargetFile = Join-Path $InstallDir "llogin.ps1"
 $TargetCmdFile = Join-Path $InstallDir "llogin.cmd"
@@ -58,14 +57,21 @@ try {
     Write-Host "Installing llogin.ps1 to $InstallDir..." -ForegroundColor Cyan
     Copy-Item -Path $SourceFile -Destination $TargetFile -Force
     Write-Host "llogin.ps1 installed" -ForegroundColor Green
-    
-    if (Test-Path $SourceCmdFile) {
-        Write-Host "Installing llogin.cmd to $InstallDir..." -ForegroundColor Cyan
-        Copy-Item -Path $SourceCmdFile -Destination $TargetCmdFile -Force
-        Write-Host "llogin.cmd installed" -ForegroundColor Green
-    }
 } catch {
-    Write-Host "Error copying files: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Error copying llogin.ps1: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
+
+try {
+    Write-Host "Creating llogin.cmd batch file..." -ForegroundColor Cyan
+    $CmdContent = @"
+@echo off
+powershell.exe -ExecutionPolicy Bypass -NoProfile -File "$TargetFile" %*
+"@
+    $CmdContent | Out-File -FilePath $TargetCmdFile -Encoding ASCII
+    Write-Host "llogin.cmd created" -ForegroundColor Green
+} catch {
+    Write-Host "Error creating llogin.cmd: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }
 
@@ -85,7 +91,30 @@ try {
 }
 
 try {
+    $ProfilePath = $PROFILE.CurrentUserAllHosts
+    $ProfileDir = Split-Path $ProfilePath -Parent
+    
+    if (-not (Test-Path $ProfileDir)) {
+        New-Item -ItemType Directory -Path $ProfileDir -Force | Out-Null
+    }
+    
+    $AliasCommand = "Set-Alias -Name llogin -Value `"$TargetFile`""
+    
+    if (Test-Path $ProfilePath) {
+        $ProfileContent = Get-Content $ProfilePath -Raw
+        if ($ProfileContent -notmatch "Set-Alias.*llogin") {
+            Write-Host "Adding PowerShell alias to profile..." -ForegroundColor Cyan
+            Add-Content -Path $ProfilePath -Value "`n# LLogin alias"
+            Add-Content -Path $ProfilePath -Value $AliasCommand
+            Write-Host "PowerShell alias added" -ForegroundColor Green
+        } else {
+            Write-Host "PowerShell alias already exists in profile" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "Creating PowerShell profile with alias..." -ForegroundColor Cyan
+        "# PowerShell Profile`n# LLogin alias`n$AliasCommand" | Out-File -FilePath $ProfilePath -Encoding UTF8
         Write-Host "PowerShell profile created with alias" -ForegroundColor Green
+    }
 } catch {
     Write-Host "Warning: Could not set up PowerShell alias: $($_.Exception.Message)" -ForegroundColor Yellow
 }
@@ -99,7 +128,7 @@ if ($CreateShortcut) {
         $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
         $Shortcut.TargetPath = "powershell.exe"
         $Shortcut.Arguments = "-ExecutionPolicy Bypass -File `"$TargetFile`""
-        $Shortcut.WorkingDirectory = $UserRootDir
+        $Shortcut.WorkingDirectory = $InstallDir
         $Shortcut.Description = "LPU Auto Wireless Login"
         $Shortcut.Save()
         
@@ -116,7 +145,7 @@ if ($InstallOnly) {
     Write-Host "Manual Usage:" -ForegroundColor Cyan
     Write-Host "============" -ForegroundColor Cyan
     Write-Host "1. Edit credentials in: $TargetFile" -ForegroundColor White
-    Write-Host "2. Run manually: powershell -File `"$TargetFile`"" -ForegroundColor White
+    Write-Host "2. Run manually: llogin username password" -ForegroundColor White
     Write-Host ""
     Write-Host "To set up automatic login later, run this script again without -InstallOnly" -ForegroundColor Yellow
     exit 0
@@ -129,9 +158,6 @@ if (-not $IsAdmin) {
     Write-Host "The login script has been installed, but automatic scheduling was skipped." -ForegroundColor Yellow
     exit 1
 }
-
-$CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-$UserSID = $CurrentUser.User.Value
 
 $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if ($ExistingTask) {
@@ -187,7 +213,7 @@ $TaskXML = @"
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>pwsh</Command>
+      <Command>powershell</Command>
       <Arguments>-ExecutionPolicy Bypass -NoProfile -File "$TargetFile"</Arguments>
     </Exec>
   </Actions>
@@ -236,9 +262,9 @@ Write-Host "  Set your LPU username and password in the script variables" -Foreg
 Write-Host ""
 Write-Host "Usage:" -ForegroundColor Cyan
 Write-Host "======" -ForegroundColor Cyan
-Write-Host "- PowerShell: llogin" -ForegroundColor White
-Write-Host "- CMD: llogin" -ForegroundColor White
-Write-Host "- Direct: powershell -File `"$TargetFile`"" -ForegroundColor White
+Write-Host "- PowerShell: llogin username password" -ForegroundColor White
+Write-Host "- CMD: llogin username password" -ForegroundColor White
+Write-Host "- With defaults: llogin" -ForegroundColor White
 Write-Host ""
 Write-Host "Management Commands:" -ForegroundColor Cyan
 Write-Host "==================" -ForegroundColor Cyan
@@ -259,7 +285,7 @@ if (-not $CreateShortcut) {
             $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
             $Shortcut.TargetPath = "powershell.exe"
             $Shortcut.Arguments = "-ExecutionPolicy Bypass -File `"$TargetFile`""
-            $Shortcut.WorkingDirectory = $UserRootDir
+            $Shortcut.WorkingDirectory = $InstallDir
             $Shortcut.Description = "LPU Auto Wireless Login"
             $Shortcut.Save()
             
