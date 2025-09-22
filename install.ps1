@@ -46,8 +46,8 @@ if (-not (Test-Path $InstallDir)) {
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 }
 
-$SourceFile = Join-Path $PSScriptRoot "llogin.ps1"
-if (Test-Path $SourceFile) {
+$SourceFile = if ($PSScriptRoot) { Join-Path $PSScriptRoot "llogin.ps1" } else { $null }
+if ($SourceFile -and (Test-Path $SourceFile)) {
     Write-Host "Installing llogin.ps1 from local directory..." -ForegroundColor Cyan
     try {
         Copy-Item -Path $SourceFile -Destination $TargetFile -Force
