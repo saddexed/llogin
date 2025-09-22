@@ -14,13 +14,7 @@ if (-not $InstallOnly -and -not $IsAdmin) {
         if ($CreateShortcut) { $ArgumentList += "-CreateShortcut" }
         if ($InstallOnly) { $ArgumentList += "-InstallOnly" }
         
-        # Handle case when script is run via irm|iex (PSCommandPath is null)
-        if (-not $PSCommandPath) {
-            $ScriptUrl = "https://raw.githubusercontent.com/saddexed/llogin/refs/heads/master/install.ps1"
-            $Arguments = "-ExecutionPolicy Bypass -Command `"irm '$ScriptUrl' | iex`" " + ($ArgumentList -join " ")
-        } else {
-            $Arguments = "-ExecutionPolicy Bypass -File `"$PSCommandPath`" " + ($ArgumentList -join " ")
-        }
+        $Arguments = "-ExecutionPolicy Bypass -File `"$PSCommandPath`" " + ($ArgumentList -join " ")
         
         Start-Process -FilePath "powershell.exe" -ArgumentList $Arguments -Verb RunAs -Wait
         exit 0
@@ -36,7 +30,7 @@ Write-Host "llogin Installer" -ForegroundColor Cyan
 Write-Host "===============================================" -ForegroundColor Cyan
 Write-Host ""
 
-$LLoginUrl = "https://raw.githubusercontent.com/saddexed/llogin/refs/heads/master/llogin.ps1"
+$SourceFile = Join-Path $PSScriptRoot "llogin.ps1"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\llogin"
 $TargetFile = Join-Path $InstallDir "llogin.ps1"
 $TargetCmdFile = Join-Path $InstallDir "llogin.cmd"
@@ -46,35 +40,29 @@ if (-not (Test-Path $InstallDir)) {
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 }
 
-$SourceFile = if ($PSScriptRoot) { Join-Path $PSScriptRoot "llogin.ps1" } else { $null }
-if ($SourceFile -and (Test-Path $SourceFile)) {
-    Write-Host "Installing llogin.ps1 from local directory..." -ForegroundColor Cyan
-    try {
-        Copy-Item -Path $SourceFile -Destination $TargetFile -Force
-        Write-Host "llogin.ps1 installed from local file" -ForegroundColor Green
-    } catch {
-        Write-Host "Error copying llogin.ps1: $($_.Exception.Message)" -ForegroundColor Red
-        exit 1
-    }
-} else {
-    Write-Host "Downloading llogin.ps1 from GitHub..." -ForegroundColor Cyan
-    try {
-        $LLoginContent = Invoke-RestMethod -Uri $LLoginUrl
-        $LLoginContent | Out-File -FilePath $TargetFile -Encoding UTF8
-        Write-Host "llogin.ps1 downloaded" -ForegroundColor Green
-    } catch {
-        Write-Host "Error downloading llogin.ps1: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "Please check your internet connection and GitHub URL." -ForegroundColor Yellow
-        exit 1
-    }
+if (-not (Test-Path $SourceFile)) {
+    Write-Host "Error: Source file 'llogin.ps1' not found in the current directory." -ForegroundColor Red
+    Write-Host "Please run this script from the directory containing llogin.ps1" -ForegroundColor Red
+    exit 1
 }
 
-if (Test-Path $TargetCmdFile) {
-    Write-Host "File llogin.cmd already exists in $InstallDir. Overwriting..." -ForegroundColor Yellow
+try {
+    Write-Host "Installing llogin.ps1 to $InstallDir..." -ForegroundColor Cyan
+    if (Test-Path $TargetFile) {
+        Write-Host "File llogin.ps1 already exists in $InstallDir. Overwriting..." -ForegroundColor Yellow
+    }
+    Copy-Item -Path $SourceFile -Destination $TargetFile -Force
+    Write-Host "llogin.ps1 installed" -ForegroundColor Green
+} catch {
+    Write-Host "Error copying llogin.ps1: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
 }
 
 try {
     Write-Host "Creating llogin.cmd batch file..." -ForegroundColor Cyan
+    if (Test-Path $TargetCmdFile) {
+        Write-Host "File llogin.cmd already exists in $InstallDir. Overwriting..." -ForegroundColor Yellow
+    }
     $CmdContent = @"
 @echo off
 powershell.exe -ExecutionPolicy Bypass -NoProfile -File "$TargetFile" %*
@@ -276,11 +264,6 @@ Write-Host "======" -ForegroundColor Cyan
 Write-Host "- PowerShell: llogin username password" -ForegroundColor White
 Write-Host "- CMD: llogin username password" -ForegroundColor White
 Write-Host "- With defaults: llogin" -ForegroundColor White
-Write-Host ""
-Write-Host "Management Commands:" -ForegroundColor Cyan
-Write-Host "==================" -ForegroundColor Cyan
-Write-Host "- View task: Get-ScheduledTask -TaskName $TaskName" -ForegroundColor Gray
-Write-Host "- Run manually: Start-ScheduledTask -TaskName $TaskName" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Note: Restart your terminal to use the 'llogin' command" -ForegroundColor Yellow
 
