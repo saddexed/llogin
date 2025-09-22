@@ -1,6 +1,6 @@
 # Static Configuration
-$Username = "26775"
-$Password = "26775"
+$Username = ""
+$Password = ""
 $LoginUrl = "https://10.10.0.1/24online/servlet/E24onlineHTTPClient"
 $SuccessMessage = "To start surfing"
 
