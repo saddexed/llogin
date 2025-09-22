@@ -86,7 +86,7 @@ if ($InstallOnly) {
     Write-Host "Manual Usage:" -ForegroundColor Cyan
     Write-Host "============" -ForegroundColor Cyan
     Write-Host "1. Edit credentials in: $TargetFile" -ForegroundColor White
-    Write-Host "2. Run manually: & `"$TargetFile`"" -ForegroundColor White
+    Write-Host "2. Run manually: powershell -File `"$TargetFile`"" -ForegroundColor White
     Write-Host ""
     Write-Host "To set up automatic login later, run this script again without -InstallOnly" -ForegroundColor Yellow
     exit 0
@@ -203,7 +203,9 @@ try {
 # Final success message and instructions
 Write-Host ""
 Write-Host "INSTALLATION COMPLETED SUCCESSFULLY!" -ForegroundColor Green
-if ($CreateShortcut) { Write-Host "✓ Desktop shortcut: Created" -ForegroundColor Green }
+if ($CreateShortcut) { 
+    Write-Host "Desktop shortcut: Created" -ForegroundColor Green 
+}
 Write-Host ""
 Write-Host "Configuration Required:" -ForegroundColor Yellow
 Write-Host "======================" -ForegroundColor Yellow
@@ -213,9 +215,9 @@ Write-Host "  Set your LPU username and password in the script variables" -Foreg
 Write-Host ""
 Write-Host "Management Commands:" -ForegroundColor Cyan
 Write-Host "==================" -ForegroundColor Cyan
-Write-Host "• View task: Get-ScheduledTask -TaskName $TaskName" -ForegroundColor Gray
-Write-Host "• Run manually: Start-ScheduledTask -TaskName $TaskName" -ForegroundColor Gray
-Write-Host "• Run login script: & `"$TargetFile`"" -ForegroundColor Gray
+Write-Host "- View task: Get-ScheduledTask -TaskName $TaskName" -ForegroundColor Gray
+Write-Host "- Run manually: Start-ScheduledTask -TaskName $TaskName" -ForegroundColor Gray
+Write-Host "- Run login script: powershell -File `"$TargetFile`"" -ForegroundColor White
 
 if (-not $CreateShortcut) {
     Write-Host ""
