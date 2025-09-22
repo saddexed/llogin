@@ -30,7 +30,7 @@ Write-Host "llogin Installer" -ForegroundColor Cyan
 Write-Host "===============================================" -ForegroundColor Cyan
 Write-Host ""
 
-$LLoginUrl = "https://raw.githubusercontent.com/saddexed/llogin/main/llogin.ps1"
+$LLoginUrl = "https://raw.githubusercontent.com/saddexed/llogin/master/llogin.ps1"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\llogin"
 $TargetFile = Join-Path $InstallDir "llogin.ps1"
 $TargetCmdFile = Join-Path $InstallDir "llogin.cmd"
