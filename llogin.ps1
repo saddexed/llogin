@@ -1,6 +1,6 @@
 # Static Configuration
-$Username = ""
-$Password = ""
+$Username = "26775"
+$Password = "26775"
 $LoginUrl = "https://10.10.0.1/24online/servlet/E24onlineHTTPClient"
 $SuccessMessage = "To start surfing"
 
@@ -8,7 +8,6 @@ function Get-CurrentWiFiNetwork {
     try {
         $WifiInfo = netsh wlan show profiles | Select-String "All User Profile" | ForEach-Object { $_.ToString().Split(":")[1].Trim() }
         $ConnectedProfile = netsh wlan show interfaces | Select-String "Profile" | ForEach-Object { $_.ToString().Split(":")[1].Trim() }
-        
 
         if ($ConnectedProfile) {
             return $ConnectedProfile
@@ -42,10 +41,8 @@ function Invoke-Login {
         $FormData = "mode=191&username=${Username}%40lpu.com&password=${Password}"
 
         if ($PSVersionTable.PSVersion.Major -ge 6) {
-            # PowerShell Core/7+
             $Response = Invoke-WebRequest -Uri $LoginUrl -Method POST -Body $FormData -SkipCertificateCheck
         } else {
-            # Windows PowerShell 5.1
             [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
             $Response = Invoke-WebRequest -Uri $LoginUrl -Method POST -Body $FormData 
         }
