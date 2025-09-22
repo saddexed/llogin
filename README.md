@@ -9,21 +9,27 @@ LLogin automatically authenticates with LPU wireless networks when you connect. 
 ## Features
 
 - Automatic detection of LPU wireless networks
+- Command-line argument support for credentials
 - Scheduled task for automatic login on network connection
 - Manual login capability
 - Desktop shortcut creation
 - Windows event-triggered execution
+- Cross-platform PowerShell and CMD support
 
 ## Installation
 
-1. Run the installer as administrator:
+### One-Line Installation (Recommended)
+Install directly from GitHub:
+```powershell
+irm https://raw.githubusercontent.com/saddexed/llogin/main/install.ps1 | iex
+```
+
+### Local Installation
+1. Clone or download the repository
+2. Run the installer:
    ```powershell
    .\install.ps1
    ```
-
-2. Configure your credentials in the installed script:
-   - Edit `%USERPROFILE%\llogin.ps1`
-   - Update the `$Username` and `$Password` variables
 
 ### Installation Options
 
@@ -33,30 +39,36 @@ LLogin automatically authenticates with LPU wireless networks when you connect. 
 
 ## Usage
 
-### Automatic
-Once installed, the script runs automatically when you connect to LPU networks.
-
-### Manual
-Run the login script directly:
+### Command Line Arguments
 ```powershell
-& "$env:USERPROFILE\llogin.ps1"
+llogin username password    # Login with specific credentials
+llogin                      # Use default credentials (if set)
+llogin -Help               # Show help message
+llogin -Start              # Start and enable scheduled task
+llogin -Stop               # Stop and disable scheduled task
 ```
 
-Or use the desktop shortcut if created during installation.
+### Automatic Login
+Once installed with the scheduled task, the script runs automatically when you connect to LPU networks.
 
 ## Configuration
 
-Edit the credentials in `llogin.ps1`:
+You can set default credentials in the script file for passwordless usage:
+
+Edit `%LOCALAPPDATA%\Programs\llogin\llogin.ps1`:
 ```powershell
-$Username = "your_username"
-$Password = "your_password"
+$DefaultUsername = "your_username"
+$DefaultPassword = "your_password"
 ```
+
+Then simply run `llogin` without arguments.
 
 ## Requirements
 
-- Windows PowerShell or PowerShell Core
-- Administrator privileges (for scheduled task setup)
+- Windows PowerShell 5.1 or PowerShell Core 6+
+- Administrator privileges (for scheduled task setup only)
 - Connection to LPU or Block wireless networks
+- Internet connectivity to reach authentication portal
 
 ## How It Works
 
@@ -65,35 +77,34 @@ $Password = "your_password"
 3. Submits authentication request to `10.10.0.1/24online/servlet/E24onlineHTTPClient`
 4. Verifies successful login response
 
-## Management
+## Task Management
 
-View scheduled task:
+The script includes built-in task management:
+
 ```powershell
-Get-ScheduledTask -TaskName "llogin"
+llogin -Start    # Enable automatic login
+llogin -Stop     # Disable automatic login
 ```
 
-Run task manually:
+Or use PowerShell commands directly:
 ```powershell
-Start-ScheduledTask -TaskName "llogin"
+Get-ScheduledTask -TaskName "llogin"           # View task
+Start-ScheduledTask -TaskName "llogin"         # Run task manually
+Unregister-ScheduledTask -TaskName "llogin"    # Remove task completely
 ```
 
-Remove scheduled task:
-```powershell
-Unregister-ScheduledTask -TaskName "llogin"
-```
+## Installation Directory
 
-## File Structure
-
+Files are installed to: `%LOCALAPPDATA%\Programs\llogin\`
 - `llogin.ps1` - Main login script
-- `install.ps1` - Installation and setup script
-- `test/` - Test scripts and utilities
+- `llogin.cmd` - CMD batch wrapper
+
+This directory is automatically added to your PATH for global access.
 
 ## Notes
 
 - The script only activates on LPU or Block wireless networks
 - Requires network connectivity to reach the authentication portal
 - Uses Windows event triggers for automatic execution
-
-## TODO
-- Credential management
-- Logout function
+- Compatible with both PowerShell and CMD terminals
+- No need to distribute `llogin.cmd` - it's generated during installation

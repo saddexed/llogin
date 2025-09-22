@@ -30,7 +30,7 @@ Write-Host "llogin Installer" -ForegroundColor Cyan
 Write-Host "===============================================" -ForegroundColor Cyan
 Write-Host ""
 
-$SourceFile = Join-Path $PSScriptRoot "llogin.ps1"
+$LLoginUrl = "https://raw.githubusercontent.com/saddexed/llogin/main/llogin.ps1"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\llogin"
 $TargetFile = Join-Path $InstallDir "llogin.ps1"
 $TargetCmdFile = Join-Path $InstallDir "llogin.cmd"
@@ -40,26 +40,31 @@ if (-not (Test-Path $InstallDir)) {
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 }
 
-if (-not (Test-Path $SourceFile)) {
-    Write-Host "Error: Source file 'llogin.ps1' not found in the current directory." -ForegroundColor Red
-    Write-Host "Please run this script from the directory containing llogin.ps1" -ForegroundColor Red
-    exit 1
+$SourceFile = Join-Path $PSScriptRoot "llogin.ps1"
+if (Test-Path $SourceFile) {
+    Write-Host "Installing llogin.ps1 from local directory..." -ForegroundColor Cyan
+    try {
+        Copy-Item -Path $SourceFile -Destination $TargetFile -Force
+        Write-Host "llogin.ps1 installed from local file" -ForegroundColor Green
+    } catch {
+        Write-Host "Error copying llogin.ps1: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
+} else {
+    Write-Host "Downloading llogin.ps1 from GitHub..." -ForegroundColor Cyan
+    try {
+        $LLoginContent = Invoke-RestMethod -Uri $LLoginUrl
+        $LLoginContent | Out-File -FilePath $TargetFile -Encoding UTF8
+        Write-Host "llogin.ps1 downloaded" -ForegroundColor Green
+    } catch {
+        Write-Host "Error downloading llogin.ps1: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Please check your internet connection and GitHub URL." -ForegroundColor Yellow
+        exit 1
+    }
 }
 
-if (Test-Path $TargetFile) {
-    Write-Host "File llogin.ps1 already exists in $InstallDir. Overwriting..." -ForegroundColor Yellow
-}
 if (Test-Path $TargetCmdFile) {
     Write-Host "File llogin.cmd already exists in $InstallDir. Overwriting..." -ForegroundColor Yellow
-}
-
-try {
-    Write-Host "Installing llogin.ps1 to $InstallDir..." -ForegroundColor Cyan
-    Copy-Item -Path $SourceFile -Destination $TargetFile -Force
-    Write-Host "llogin.ps1 installed" -ForegroundColor Green
-} catch {
-    Write-Host "Error copying llogin.ps1: $($_.Exception.Message)" -ForegroundColor Red
-    exit 1
 }
 
 try {
