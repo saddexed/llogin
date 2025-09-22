@@ -4,7 +4,6 @@ param(
     [switch]$InstallOnly
 )
 
-# Check if running as administrator for scheduler operations
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
 
 if (-not $InstallOnly -and -not $IsAdmin) {
@@ -31,34 +30,66 @@ Write-Host "llogin Installer" -ForegroundColor Cyan
 Write-Host "===============================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Configuration
 $SourceFile = Join-Path $PSScriptRoot "llogin.ps1"
-$UserRootDir = $env:USERPROFILE
-$TargetFile = Join-Path $UserRootDir "llogin.ps1"
+$SourceCmdFile = Join-Path $PSScriptRoot "llogin.cmd"
+$InstallDir = Join-Path $env:LOCALAPPDATA "Programs\llogin"
+$TargetFile = Join-Path $InstallDir "llogin.ps1"
+$TargetCmdFile = Join-Path $InstallDir "llogin.cmd"
 
-# Check source file exists
+if (-not (Test-Path $InstallDir)) {
+    Write-Host "Creating installation directory: $InstallDir" -ForegroundColor Cyan
+    New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+}
+
 if (-not (Test-Path $SourceFile)) {
     Write-Host "Error: Source file 'llogin.ps1' not found in the current directory." -ForegroundColor Red
     Write-Host "Please run this script from the directory containing llogin.ps1" -ForegroundColor Red
     exit 1
 }
 
-# Check if target file already exists and inform user
 if (Test-Path $TargetFile) {
-    Write-Host "File llogin.ps1 already exists in $UserRootDir. Overwriting..." -ForegroundColor Yellow
+    Write-Host "File llogin.ps1 already exists in $InstallDir. Overwriting..." -ForegroundColor Yellow
+}
+if (Test-Path $TargetCmdFile) {
+    Write-Host "File llogin.cmd already exists in $InstallDir. Overwriting..." -ForegroundColor Yellow
 }
 
-# Copy the file to user's root directory
 try {
-    Write-Host "Copying llogin.ps1 to user directory (${TargetFile})..." -ForegroundColor Cyan
+    Write-Host "Installing llogin.ps1 to $InstallDir..." -ForegroundColor Cyan
     Copy-Item -Path $SourceFile -Destination $TargetFile -Force
-    Write-Host "llogin installed" -ForegroundColor Green
+    Write-Host "llogin.ps1 installed" -ForegroundColor Green
+    
+    if (Test-Path $SourceCmdFile) {
+        Write-Host "Installing llogin.cmd to $InstallDir..." -ForegroundColor Cyan
+        Copy-Item -Path $SourceCmdFile -Destination $TargetCmdFile -Force
+        Write-Host "llogin.cmd installed" -ForegroundColor Green
+    }
 } catch {
-    Write-Host "Error copying file: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Error copying files: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }
 
-# Create desktop shortcut if requested
+try {
+    $UserPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+    if ($UserPath -notlike "*$InstallDir*") {
+        Write-Host "Adding installation directory to PATH..." -ForegroundColor Cyan
+        $NewUserPath = if ($UserPath) { "$UserPath;$InstallDir" } else { $InstallDir }
+        [Environment]::SetEnvironmentVariable("PATH", $NewUserPath, "User")
+        Write-Host "Installation directory added to PATH" -ForegroundColor Green
+        Write-Host "Note: You may need to restart your terminal for PATH changes to take effect" -ForegroundColor Yellow
+    } else {
+        Write-Host "Installation directory already in PATH" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "Warning: Could not update PATH environment variable: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+
+try {
+        Write-Host "PowerShell profile created with alias" -ForegroundColor Green
+} catch {
+    Write-Host "Warning: Could not set up PowerShell alias: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+
 if ($CreateShortcut) {
     try {
         $DesktopPath = [Environment]::GetFolderPath("Desktop")
@@ -78,7 +109,6 @@ if ($CreateShortcut) {
     }
 }
 
-# Skip scheduler setup if InstallOnly is specified
 if ($InstallOnly) {
     Write-Host ""
     Write-Host "Installation completed!" -ForegroundColor Green
@@ -92,7 +122,6 @@ if ($InstallOnly) {
     exit 0
 }
 
-# Step 2: Create Scheduled Task
 Write-Host ""
 
 if (-not $IsAdmin) {
@@ -101,11 +130,9 @@ if (-not $IsAdmin) {
     exit 1
 }
 
-# Get current user information
 $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $UserSID = $CurrentUser.User.Value
 
-# Check if task already exists and remove it if necessary
 $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if ($ExistingTask) {
     try {
@@ -116,7 +143,6 @@ if ($ExistingTask) {
     }
 }
 
-# Create the XML template with dynamic values
 $TaskXML = @"
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -171,17 +197,14 @@ $TaskXML = @"
 Write-Host "Creating scheduled task $TaskName..." -ForegroundColor Cyan
 
 try {
-    # Create a temporary XML file
     $TempXMLPath = Join-Path $env:TEMP "LPU-Task-$([System.Guid]::NewGuid().ToString()).xml"
     $TaskXML | Out-File -FilePath $TempXMLPath -Encoding Unicode
     
-    # Register the task using the XML file
     schtasks /create /tn "$TaskName" /xml "$TempXMLPath" /f
     
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Scheduled task created successfully!" -ForegroundColor Green
         
-        # Clean up temporary file
         Remove-Item $TempXMLPath -Force -ErrorAction SilentlyContinue
         
     } else {
@@ -191,7 +214,6 @@ try {
 } catch {
     Write-Host "Error creating scheduled task: $($_.Exception.Message)" -ForegroundColor Red
     
-    # Clean up temporary file if it exists
     if (Test-Path $TempXMLPath) {
         Remove-Item $TempXMLPath -Force -ErrorAction SilentlyContinue
     }
@@ -200,7 +222,6 @@ try {
     exit 1
 }
 
-# Final success message and instructions
 Write-Host ""
 Write-Host "INSTALLATION COMPLETED SUCCESSFULLY!" -ForegroundColor Green
 if ($CreateShortcut) { 
@@ -213,11 +234,18 @@ Write-Host "IMPORTANT: Edit your credentials in the login script:" -ForegroundCo
 Write-Host "  File: $TargetFile" -ForegroundColor White
 Write-Host "  Set your LPU username and password in the script variables" -ForegroundColor White
 Write-Host ""
+Write-Host "Usage:" -ForegroundColor Cyan
+Write-Host "======" -ForegroundColor Cyan
+Write-Host "- PowerShell: llogin" -ForegroundColor White
+Write-Host "- CMD: llogin" -ForegroundColor White
+Write-Host "- Direct: powershell -File `"$TargetFile`"" -ForegroundColor White
+Write-Host ""
 Write-Host "Management Commands:" -ForegroundColor Cyan
 Write-Host "==================" -ForegroundColor Cyan
 Write-Host "- View task: Get-ScheduledTask -TaskName $TaskName" -ForegroundColor Gray
 Write-Host "- Run manually: Start-ScheduledTask -TaskName $TaskName" -ForegroundColor Gray
-Write-Host "- Run login script: powershell -File `"$TargetFile`"" -ForegroundColor White
+Write-Host ""
+Write-Host "Note: Restart your terminal to use the 'llogin' command" -ForegroundColor Yellow
 
 if (-not $CreateShortcut) {
     Write-Host ""

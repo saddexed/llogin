@@ -1,8 +1,47 @@
-# Static Configuration
-$Username = ""
-$Password = ""
+param(
+    [string]$Username,
+    [string]$Password,
+    [switch]$Help
+)
+
+# Show help if requested
+if ($Help) {
+    Write-Host "LLogin - LPU Wireless Auto Login" -ForegroundColor Cyan
+    Write-Host "================================" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Usage:" -ForegroundColor Yellow
+    Write-Host "  llogin                          Login with default credentials (if set)" -ForegroundColor White
+    Write-Host "  llogin <username> <password>    Login with specified credentials" -ForegroundColor White
+    Write-Host "  llogin -Help                    Show this help message" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Examples:" -ForegroundColor Yellow
+    Write-Host "  llogin 26667 26667              Login with username 26667" -ForegroundColor Gray
+    Write-Host "  llogin john.doe mypassword       Login with custom credentials" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Notes:" -ForegroundColor Yellow
+    Write-Host "- Must be connected to LPU or Block wireless network" -ForegroundColor Gray
+    Write-Host "- Default credentials can be set in the script file" -ForegroundColor Gray
+    exit 0
+}
+
+$DefaultUsername = ""
+$DefaultPassword = ""
 $LoginUrl = "https://10.10.0.1/24online/servlet/E24onlineHTTPClient"
 $SuccessMessage = "To start surfing"
+
+if (-not $Username) {
+    $Username = $DefaultUsername
+}
+if (-not $Password) {
+    $Password = $DefaultPassword
+}
+
+if (-not $Username -or -not $Password) {
+    Write-Host "Error: Username and password are required." -ForegroundColor Red
+    Write-Host "Usage: llogin <username> <password>" -ForegroundColor Yellow
+    Write-Host "   or: Set default credentials in the script file" -ForegroundColor Yellow
+    exit 1
+}
 
 function Get-CurrentWiFiNetwork {
     try {
@@ -37,7 +76,7 @@ function Test-LoginSuccess {
 
 function Invoke-Login {
     try {
-        Write-Host "Attempting login..." -ForegroundColor Cyan
+        Write-Host "Attempting login with ${Username}..." -ForegroundColor Cyan
         $FormData = "mode=191&username=${Username}%40lpu.com&password=${Password}"
 
         if ($PSVersionTable.PSVersion.Major -ge 6) {
