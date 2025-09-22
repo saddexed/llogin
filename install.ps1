@@ -14,7 +14,13 @@ if (-not $InstallOnly -and -not $IsAdmin) {
         if ($CreateShortcut) { $ArgumentList += "-CreateShortcut" }
         if ($InstallOnly) { $ArgumentList += "-InstallOnly" }
         
-        $Arguments = "-ExecutionPolicy Bypass -File `"$PSCommandPath`" " + ($ArgumentList -join " ")
+        # Handle case when script is run via irm|iex (PSCommandPath is null)
+        if (-not $PSCommandPath) {
+            $ScriptUrl = "https://raw.githubusercontent.com/saddexed/llogin/refs/heads/master/install.ps1"
+            $Arguments = "-ExecutionPolicy Bypass -Command `"irm '$ScriptUrl' | iex`" " + ($ArgumentList -join " ")
+        } else {
+            $Arguments = "-ExecutionPolicy Bypass -File `"$PSCommandPath`" " + ($ArgumentList -join " ")
+        }
         
         Start-Process -FilePath "powershell.exe" -ArgumentList $Arguments -Verb RunAs -Wait
         exit 0
@@ -30,7 +36,7 @@ Write-Host "llogin Installer" -ForegroundColor Cyan
 Write-Host "===============================================" -ForegroundColor Cyan
 Write-Host ""
 
-$LLoginUrl = "https://raw.githubusercontent.com/saddexed/llogin/master/llogin.ps1"
+$LLoginUrl = "https://raw.githubusercontent.com/saddexed/llogin/refs/heads/master/llogin.ps1"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\llogin"
 $TargetFile = Join-Path $InstallDir "llogin.ps1"
 $TargetCmdFile = Join-Path $InstallDir "llogin.cmd"

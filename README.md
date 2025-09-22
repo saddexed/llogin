@@ -21,7 +21,7 @@ LLogin automatically authenticates with LPU wireless networks when you connect. 
 ### One-Line Installation (Recommended)
 Install directly from GitHub:
 ```powershell
-irm https://raw.githubusercontent.com/saddexed/llogin/master/install.ps1 | iex
+irm https://raw.githubusercontent.com/saddexed/llogin/refs/heads/master/install.ps1 | iex
 ```
 
 ### Local Installation
