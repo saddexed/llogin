@@ -163,20 +163,6 @@ The script checks for credentials in this order:
 - **No hardcoded credentials**: Script file contains no sensitive data
 - **File permissions**: Credentials file accessible only to current user
 
-### Security Best Practices
-
-```powershell
-# Most secure: Use environment variables
-$env:LLOGIN_USERNAME = "username"
-$env:LLOGIN_PASSWORD = "password"
-
-# Good: Use JSON file with proper permissions
-llogin -SetCredentials username password
-
-# Avoid: Passing credentials as command line arguments (visible in process list)
-# llogin username password  # Use sparingly, only for testing
-```
-
 ## Network Requirements
 
 - Must be connected to an LPU or Block wireless network

@@ -97,15 +97,31 @@ if ($Help) {
 
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
 
-if ($Start) {
-    $TaskName = "llogin"
-
-    if (-not $IsAdmin) {
-        Write-Host "Administrator privileges required to manage scheduled tasks." -ForegroundColor Red
+# Auto-elevate for commands that require admin privileges
+if (($Start -or $Stop) -and -not $IsAdmin) {
+    Write-Host "Administrator privileges required for task scheduler management. Requesting elevation..." -ForegroundColor Yellow
+    
+    try {
+        $ArgumentList = @()
+        if ($Start) { $ArgumentList += "-Start" }
+        if ($Stop) { $ArgumentList += "-Stop" }
+        if ($Username) { $ArgumentList += $Username }
+        if ($Password) { $ArgumentList += $Password }
+        
+        $Arguments = "-ExecutionPolicy Bypass -File `"$PSCommandPath`" " + ($ArgumentList -join " ")
+        
+        Start-Process -FilePath "powershell.exe" -ArgumentList $Arguments -Verb RunAs -Wait
+        exit 0
+    } catch {
+        Write-Host "Failed to elevate privileges: $($_.Exception.Message)" -ForegroundColor Red
         Write-Host "Please run PowerShell as Administrator and try again." -ForegroundColor Yellow
         exit 1
     }
-    
+}
+
+if ($Start) {
+    $TaskName = "llogin"
+
     try {
         $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
         if ($ExistingTask) {
@@ -141,12 +157,6 @@ if ($Start) {
 
 if ($Stop) {
     $TaskName = "llogin"
-    
-    if (-not $IsAdmin) {
-        Write-Host "Administrator privileges required to manage scheduled tasks." -ForegroundColor Red
-        Write-Host "Please run PowerShell as Administrator and try again." -ForegroundColor Yellow
-        exit 1
-    }
     
     try {
         $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -260,10 +270,7 @@ function Remove-StoredCredentials {
 }
 
 function Get-Credentials {
-    $effectiveUsername = $null
-    $effectivePassword = $null
-    $source = "none"
-    
+
     if ($Username -and $Password) {
         $effectiveUsername = $Username
         $effectivePassword = $Password
@@ -325,26 +332,15 @@ if ($PromptCredentials) {
 }
 
 if ($ShowCredentials) {
-    Write-Host "Credential Status" -ForegroundColor Cyan
-    Write-Host "=================" -ForegroundColor Cyan
-    Write-Host ""
-    
+
     $stored = Get-StoredCredentials
     if ($stored) {
-        Write-Host "JSON Credentials File: Found" -ForegroundColor Green
-        Write-Host "  Location: $CredentialsPath" -ForegroundColor Gray
-        Write-Host "  Username: $($stored.Username)" -ForegroundColor White
-        Write-Host "  Password: [Protected]" -ForegroundColor White
+        Write-Host "Location: $CredentialsPath" -ForegroundColor Gray
+        Write-Host "Username: $($stored.Username)" -ForegroundColor White
+        Write-Host "Password: $($stored.Password)" -ForegroundColor White
     } else {
-        Write-Host "JSON Credentials File: Not found" -ForegroundColor Yellow
-        Write-Host "  Expected location: $CredentialsPath" -ForegroundColor Gray
+        Write-Host "json file empty or does not exist ($CredentialsPath)" -ForegroundColor Yellow
     }
-    
-    Write-Host ""
-    Write-Host "Current credential priority order:" -ForegroundColor Yellow
-    Write-Host "1. Command line parameters (llogin username password)" -ForegroundColor Gray
-    Write-Host "2. JSON credentials file" -ForegroundColor Gray
-    
     exit 0
 }
 
@@ -481,7 +477,7 @@ if ($true) {
     if (-not $Username -or -not $Password) {
         Write-Host "Error: Username and password are required." -ForegroundColor Red
         Write-Host "Usage: llogin <username> <password>" -ForegroundColor Yellow
-        Write-Host "   or: Use llogin -SetCredentials to store credentials in JSON file" -ForegroundColor Yellow
+        Write-Host "   or: Use llogin -SetCredentials to store credentials" -ForegroundColor Yellow
         exit 1
     }
     $LoginResult = Invoke-Login
