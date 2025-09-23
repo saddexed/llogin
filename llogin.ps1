@@ -6,10 +6,9 @@ param(
     [switch]$Start,
     [switch]$Logout,
     [switch]$SaveResponseHtml,
-    [switch]$SetCredentials,
-    [switch]$PromptCredentials,
-    [switch]$ShowCredentials,
-    [switch]$ClearCredentials
+    [switch]$SetCreds,
+    [switch]$ShowCreds,
+    [switch]$ClearCreds
 )
 
 function Write-ColorOutput {
@@ -61,37 +60,18 @@ function Get-LoggedInUser {
 }
 
 if ($Help) {
-    Write-Host "LLogin - LPU Wireless Auto Login" -ForegroundColor Cyan
+    Write-Host "LLogin - LPU Wifi Autologin" -ForegroundColor Cyan
     Write-Host "================================" -ForegroundColor Cyan
-    Write-Host ""
     Write-Host "Usage:" -ForegroundColor Yellow
-    Write-Host "  llogin <username> <password>    Login with specified credentials" -ForegroundColor White
     Write-Host "  llogin                          Login with stored/default credentials" -ForegroundColor White
-    Write-Host "  llogin -Login                   Explicitly login with stored/default credentials" -ForegroundColor White
-    Write-Host "  llogin -Logout [username]       Logout (auto-detects user if not specified)" -ForegroundColor White
-    Write-Host "  llogin -SetCredentials          Store default credentials" -ForegroundColor White
-    Write-Host "  llogin -PromptCredentials       Set credentials interactively" -ForegroundColor White
-    Write-Host "  llogin -ShowCredentials         Show current credential status" -ForegroundColor White
-    Write-Host "  llogin -ClearCredentials        Remove stored credentials" -ForegroundColor White
-    Write-Host "  llogin -Help                    Show this help message" -ForegroundColor White
-    Write-Host "  llogin -Stop                    Stop and disable the scheduled task" -ForegroundColor White
-    Write-Host "  llogin -Start                   Start and enable the scheduled task" -ForegroundColor White
-    Write-Host ""
-    Write-Host "Examples:" -ForegroundColor Yellow
-    Write-Host "  llogin myusername mypassword     Login with your credentials" -ForegroundColor Gray
-    Write-Host "  llogin                           Login with stored credentials" -ForegroundColor Gray
-    Write-Host "  llogin -SetCredentials john.doe  Store credentials for john.doe" -ForegroundColor Gray
-    Write-Host "  llogin -PromptCredentials        Interactive credential setup" -ForegroundColor Gray
-    Write-Host "  llogin -Logout                   Auto-logout current user" -ForegroundColor Gray
-    Write-Host "  llogin -Logout john.doe          Logout specific user" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "Credential Priority:" -ForegroundColor Yellow
-    Write-Host "1. Command line parameters" -ForegroundColor Gray
-    Write-Host "2. JSON credentials file" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "Notes:" -ForegroundColor Yellow
-    Write-Host "- Must be connected to LPU or Block wireless network" -ForegroundColor Gray
-    Write-Host "- Credentials stored securely in JSON format" -ForegroundColor Gray
+    Write-Host "  llogin <username> <password>    Login with specified credentials" -ForegroundColor White
+    Write-Host "  llogin -h, -Help                Show this help message" -ForegroundColor White
+    Write-Host "  llogin -l, -Logout              Logout" -ForegroundColor White
+    Write-Host "  llogin -set, -SetCreds          Store default credentials" -ForegroundColor White
+    Write-Host "  llogin -show, -ShowCreds        Show current credential status" -ForegroundColor White
+    Write-Host "  llogin -clear, -ClearCreds      Remove stored credentials" -ForegroundColor White
+    Write-Host "  llogin -stop                    Stop and disable the scheduled task" -ForegroundColor White
+    Write-Host "  llogin -start                   Start and enable the scheduled task" -ForegroundColor White
     exit 0
 }
 
@@ -292,7 +272,7 @@ function Get-Credentials {
     }
 }
 
-if ($SetCredentials) {
+if ($SetCreds) {
     if ($Username -and $Password) {
         if (Set-StoredCredentials -Username $Username -Password $Password) {
             exit 0
@@ -300,38 +280,13 @@ if ($SetCredentials) {
             exit 1
         }
     } else {
-        Write-Host "Error: Username and password are required for SetCredentials." -ForegroundColor Red
-        Write-Host "Usage: llogin -SetCredentials <username> <password>" -ForegroundColor Yellow
+        Write-Host "Error: Username and password are required for SetCreds." -ForegroundColor Red
+        Write-Host "Usage: llogin -SetCreds <username> <password>" -ForegroundColor Yellow
         exit 1
     }
 }
 
-if ($PromptCredentials) {
-    Write-Host "Interactive Credential Setup" -ForegroundColor Cyan
-    Write-Host "=============================" -ForegroundColor Cyan
-    
-    $promptUser = Read-Host "Enter username"
-    if (-not $promptUser) {
-        Write-Host "Error: Username cannot be empty." -ForegroundColor Red
-        exit 1
-    }
-    
-    $promptPass = Read-Host "Enter password" -AsSecureString
-    $promptPassPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($promptPass))
-    
-    if (-not $promptPassPlain) {
-        Write-Host "Error: Password cannot be empty." -ForegroundColor Red
-        exit 1
-    }
-    
-    if (Set-StoredCredentials -Username $promptUser -Password $promptPassPlain) {
-        exit 0
-    } else {
-        exit 1
-    }
-}
-
-if ($ShowCredentials) {
+if ($ShowCreds) {
 
     $stored = Get-StoredCredentials
     if ($stored) {
@@ -344,7 +299,7 @@ if ($ShowCredentials) {
     exit 0
 }
 
-if ($ClearCredentials) {
+if ($ClearCreds) {
     if (Remove-StoredCredentials) {
         exit 0
     } else {
@@ -477,7 +432,7 @@ if ($true) {
     if (-not $Username -or -not $Password) {
         Write-Host "Error: Username and password are required." -ForegroundColor Red
         Write-Host "Usage: llogin <username> <password>" -ForegroundColor Yellow
-        Write-Host "   or: Use llogin -SetCredentials to store credentials" -ForegroundColor Yellow
+        Write-Host "   or: Use llogin -SetCreds to store credentials" -ForegroundColor Yellow
         exit 1
     }
     $LoginResult = Invoke-Login
