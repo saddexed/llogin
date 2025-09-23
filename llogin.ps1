@@ -12,7 +12,6 @@ param(
     [switch]$ClearCredentials
 )
 
-# Utility functions (must be defined before use)
 function Write-ColorOutput {
     param([string]$Message,[string]$Color = 'White')
     Write-Host $Message -ForegroundColor $Color
@@ -34,6 +33,33 @@ function Write-LogEntry {
     Add-Content -Path 'log.txt' -Value $LogMessage
 }
 
+function Get-LoggedInUser {
+    try {
+        $ClientPageUrl = "https://10.10.0.1/24online/webpages/client.jsp"
+        
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            $Response = Invoke-WebRequest -Uri $ClientPageUrl -Method GET -SkipCertificateCheck -ErrorAction Stop
+        } else {
+            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+            $Response = Invoke-WebRequest -Uri $ClientPageUrl -Method GET -ErrorAction Stop
+        }
+        
+        if ($Response.Content -match 'name="loggedinuser"\s+value="([^"]+)"') {
+            $Username = $matches[1] -replace '@lpu\.com$', ''
+            Write-ColorOutput "Detected logged-in user: $Username" Green
+            return $Username
+        } else {
+            Write-ColorOutput "No logged-in user detected (may not be logged in)" Yellow
+            return $null
+        }
+        
+    } catch {
+        Write-ColorOutput "Error detecting logged-in user: $($_.Exception.Message)" Red
+        Write-ColorOutput "This usually means you're not logged in or not connected to LPU network" Yellow
+        return $null
+    }
+}
+
 if ($Help) {
     Write-Host "LLogin - LPU Wireless Auto Login" -ForegroundColor Cyan
     Write-Host "================================" -ForegroundColor Cyan
@@ -41,7 +67,8 @@ if ($Help) {
     Write-Host "Usage:" -ForegroundColor Yellow
     Write-Host "  llogin <username> <password>    Login with specified credentials" -ForegroundColor White
     Write-Host "  llogin                          Login with stored/default credentials" -ForegroundColor White
-    Write-Host "  llogin -Logout <username>       Logout the specified user" -ForegroundColor White
+    Write-Host "  llogin -Login                   Explicitly login with stored/default credentials" -ForegroundColor White
+    Write-Host "  llogin -Logout [username]       Logout (auto-detects user if not specified)" -ForegroundColor White
     Write-Host "  llogin -SetCredentials          Store default credentials" -ForegroundColor White
     Write-Host "  llogin -PromptCredentials       Set credentials interactively" -ForegroundColor White
     Write-Host "  llogin -ShowCredentials         Show current credential status" -ForegroundColor White
@@ -55,7 +82,8 @@ if ($Help) {
     Write-Host "  llogin                           Login with stored credentials" -ForegroundColor Gray
     Write-Host "  llogin -SetCredentials john.doe  Store credentials for john.doe" -ForegroundColor Gray
     Write-Host "  llogin -PromptCredentials        Interactive credential setup" -ForegroundColor Gray
-    Write-Host "  llogin -Logout john.doe          Logout john.doe" -ForegroundColor Gray
+    Write-Host "  llogin -Logout                   Auto-logout current user" -ForegroundColor Gray
+    Write-Host "  llogin -Logout john.doe          Logout specific user" -ForegroundColor Gray
     Write-Host ""
     Write-Host "Credential Priority:" -ForegroundColor Yellow
     Write-Host "1. Command line parameters" -ForegroundColor Gray
@@ -91,9 +119,8 @@ if ($Start) {
                 Write-Host "Scheduled task '$TaskName' is already enabled." -ForegroundColor Yellow
             }
             
-            # Try to start the task if it's not running
             $TaskInfo = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue
-            if ($TaskInfo -and $TaskInfo.LastTaskResult -ne 267009) {  # 267009 = Currently running
+            if ($TaskInfo -and $TaskInfo.LastTaskResult -ne 267009) {
                 Write-Host "Starting scheduled task '$TaskName'..." -ForegroundColor Cyan
                 Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
             }
@@ -126,14 +153,12 @@ if ($Stop) {
         if ($ExistingTask) {
             Write-Host "Found scheduled task '$TaskName'. Current state: $($ExistingTask.State)" -ForegroundColor Cyan
             
-            # Stop the task if it's currently running
             $TaskInfo = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue
-            if ($TaskInfo -and $TaskInfo.LastTaskResult -eq 267009) {  # 267009 = Currently running
+            if ($TaskInfo -and $TaskInfo.LastTaskResult -eq 267009) {
                 Write-Host "Stopping running task '$TaskName'..." -ForegroundColor Yellow
                 Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
             }
             
-            # Disable the task
             if ($ExistingTask.State -ne "Disabled") {
                 Write-Host "Disabling scheduled task '$TaskName'..." -ForegroundColor Yellow
                 Disable-ScheduledTask -TaskName $TaskName -ErrorAction Stop
@@ -156,7 +181,8 @@ if ($Stop) {
     exit 0
 }
 
-$Url = "https://10.10.0.1/24online/servlet/E24onlineHTTPClient"
+$LoginUrl = "https://10.10.0.1/24online/servlet/E24onlineHTTPClient"
+$LogoutUrl = "https://10.10.0.1/24online/servlet/E24onlineHTTPClient"
 $SuccessMessage = "To start surfing"
 $SuccessIndicators = @(
     'successfully logged off',
@@ -164,7 +190,6 @@ $SuccessIndicators = @(
 )
 $LoginPageIndicator = 'To start surfing'
 
-# Get credentials file path
 $CredentialsPath = if ($PSScriptRoot) { 
     Join-Path $PSScriptRoot "credentials.json" 
 } else { 
@@ -234,18 +259,16 @@ function Remove-StoredCredentials {
     }
 }
 
-function Get-EffectiveCredentials {
+function Get-Credentials {
     $effectiveUsername = $null
     $effectivePassword = $null
     $source = "none"
     
-    # Priority 1: Command line parameters
     if ($Username -and $Password) {
         $effectiveUsername = $Username
         $effectivePassword = $Password
         $source = "command line"
     }
-    # Priority 2: Stored credentials
     else {
         $stored = Get-StoredCredentials
         if ($stored -and $stored.Username -and $stored.Password) {
@@ -262,7 +285,6 @@ function Get-EffectiveCredentials {
     }
 }
 
-# Handle credential management parameters
 if ($SetCredentials) {
     if ($Username -and $Password) {
         if (Set-StoredCredentials -Username $Username -Password $Password) {
@@ -334,50 +356,26 @@ if ($ClearCredentials) {
     }
 }
 
-# Handle logout parameter validation
-if ($Logout -and -not $Username) {
-    Write-Host "Error: Username is required for logout." -ForegroundColor Red
-    Write-Host "Usage: llogin -Logout <username>" -ForegroundColor Yellow
-    exit 1
-}
-
-# Skip password requirement for logout
-if (-not $Logout) {
-    $credentials = Get-EffectiveCredentials
-    $Username = $credentials.Username
-    $Password = $credentials.Password
-
-    if (-not $Username -or -not $Password) {
-        Write-Host "Error: Username and password are required." -ForegroundColor Red
-        Write-Host "Usage: llogin <username> <password>" -ForegroundColor Yellow
-        Write-Host "   or: Use llogin -SetCredentials to store credentials in JSON file" -ForegroundColor Yellow
-        exit 1
-    }
-}
-
-function Get-CurrentWiFiNetwork {
+function Get-CurrentNetwork {
     try {
         $ConnectedProfile = netsh wlan show interfaces | Select-String "Profile" | ForEach-Object { $_.ToString().Split(":")[1].Trim() }
-
+        
         if ($ConnectedProfile) {
-            return $ConnectedProfile
+            if ($ConnectedProfile -match "^(LPU|Block).*") {
+                Write-Host "Current Network: $ConnectedProfile" -ForegroundColor Green
+                return $true
+            } else {
+                Write-Host "Current Network: $ConnectedProfile (Not an LPU network)" -ForegroundColor Red
+                return $false
+            }
         } else {
-            return $null
+            Write-Host "Current Network: Not connected" -ForegroundColor Red
+            return $false
         }
     } catch {
-        Write-Host "Error getting WiFi network: $($_.Exception.Message)" -ForegroundColor Red
-        return $null
-    }
-}
-
-function Test-LPUNetwork {
-    param([string]$NetworkName)
-    
-    if (-not $NetworkName) {
+        Write-Host "Current Network: Error detecting network - $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
-    
-    return $NetworkName -match "^(LPU|Block).*"
 }
 
 function Test-LoginSuccess {
@@ -398,15 +396,15 @@ function Invoke-Login {
         $FormData = "mode=191&username=${Username}%40lpu.com&password=${Password}"
 
         if ($PSVersionTable.PSVersion.Major -ge 6) {
-            $Response = Invoke-WebRequest -Uri $Url -Method POST -Body $FormData -SkipCertificateCheck
+            $Response = Invoke-WebRequest -Uri $LoginUrl -Method POST -Body $FormData -SkipCertificateCheck
         } else {
             [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-            $Response = Invoke-WebRequest -Uri $Url -Method POST -Body $FormData 
+            $Response = Invoke-WebRequest -Uri $LoginUrl -Method POST -Body $FormData 
         }
         
         if (Test-LoginSuccess -ResponseContent $Response.Content) {
             Write-ColorOutput "Login successful." Green
-            Write-LogEntry -Username $Username -Action "Login" -Status "success" -Url $Url
+            Write-LogEntry -Username $Username -Action "Login" -Status "success" -Url $LoginUrl
             return $true
         } else {
             Write-ColorOutput "Login failed." Red
@@ -438,17 +436,17 @@ function Invoke-Logout {
     try {
         Write-ColorOutput "Attempting logout for user $User" Cyan
         if ($PSVersionTable.PSVersion.Major -ge 6) {
-            $resp = Invoke-WebRequest -Uri $Url -Method POST -Body $FormData -Headers $CommonHeaders -ContentType 'application/x-www-form-urlencoded' -SkipCertificateCheck -ErrorAction Stop
+            $resp = Invoke-WebRequest -Uri $LogoutUrl -Method POST -Body $FormData -Headers $CommonHeaders -ContentType 'application/x-www-form-urlencoded' -SkipCertificateCheck -ErrorAction Stop
         } else {
             [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-            $resp = Invoke-WebRequest -Uri $Url -Method POST -Body $FormData -Headers $CommonHeaders -ContentType 'application/x-www-form-urlencoded' -ErrorAction Stop
+            $resp = Invoke-WebRequest -Uri $LogoutUrl -Method POST -Body $FormData -Headers $CommonHeaders -ContentType 'application/x-www-form-urlencoded' -ErrorAction Stop
         }
         if (Test-LogoutSuccess -Content $resp.Content) {
             Write-ColorOutput "Logout successful (or already logged out)." Green
-            Write-LogEntry -Username $User -Action "Logout" -Status "success" -Url $Url
+            Write-LogEntry -Username $User -Action "Logout" -Status "success" -Url $LogoutUrl
             return $true
         } else {
-            Write-ColorOutput "Did not detect logout success in response from $Url" Yellow
+            Write-ColorOutput "Did not detect logout success in response from $LogoutUrl" Yellow
             if ($SaveResponseHtml) { $resp.Content | Out-File -FilePath 'response.html' -Encoding UTF8 }
         }
     } catch {
@@ -459,16 +457,11 @@ function Invoke-Logout {
     return $false
 }
 
-$CurrentNetwork = Get-CurrentWiFiNetwork
-Write-Host "Current network: $CurrentNetwork" -ForegroundColor Yellow
-
-if (-not (Test-LPUNetwork -NetworkName $CurrentNetwork)) {
-    Write-Host "Not connected to an LPU network. Exiting." -ForegroundColor Red
+if (-not (Get-CurrentNetwork)) {
     exit 1
 }
 
 if ($Logout) {
-    Write-Host "Connected to LPU network. Proceeding with logout..." -ForegroundColor Green
     $LogoutResult = Invoke-Logout -User $Username -SaveResponseHtml:$SaveResponseHtml
 
     if ($LogoutResult) {
@@ -479,15 +472,26 @@ if ($Logout) {
     }
 }
 
-Write-Host "Connected to LPU network. Proceeding with login..." -ForegroundColor Green
+# I had to, it felt wrong having it not under a if statement given how I wrote the entire logic
+if ($true) {
+    $credentials = Get-Credentials
+    $Username = $credentials.Username
+    $Password = $credentials.Password
 
-$LoginResult = Invoke-Login
+    if (-not $Username -or -not $Password) {
+        Write-Host "Error: Username and password are required." -ForegroundColor Red
+        Write-Host "Usage: llogin <username> <password>" -ForegroundColor Yellow
+        Write-Host "   or: Use llogin -SetCredentials to store credentials in JSON file" -ForegroundColor Yellow
+        exit 1
+    }
+    $LoginResult = Invoke-Login
 
-if ($LoginResult) {
-    exit 0
-} else {
-    pause
-    exit 1
+    if ($LoginResult) {
+        exit 0
+    } else {
+        pause
+        exit 1
+    }
 }
 
 
