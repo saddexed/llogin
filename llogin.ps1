@@ -5,11 +5,23 @@ param(
     [switch]$Stop,
     [switch]$Start,
     [switch]$Logout,
-    [switch]$SaveResponseHtml,
     [switch]$SetCreds,
     [switch]$ShowCreds,
-    [switch]$ClearCreds
+    [switch]$ClearCreds,
+    [switch]$Update,
+    [switch]$Version
 )
+$CurrentVersion = "1.0.1"
+if ($Version) {
+    Write-Host "llogin version $CurrentVersion" -ForegroundColor Cyan
+    exit 0
+}
+
+# Configure TLS and certificate validation for both PowerShell 5.1 and 7+
+[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+if ($PSVersionTable.PSVersion.Major -lt 6) {
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+}
 
 function Write-ColorOutput {
     param([string]$Message,[string]$Color = 'White')
@@ -39,7 +51,6 @@ function Get-LoggedInUser {
         if ($PSVersionTable.PSVersion.Major -ge 6) {
             $Response = Invoke-WebRequest -Uri $ClientPageUrl -Method GET -SkipCertificateCheck -ErrorAction Stop
         } else {
-            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
             $Response = Invoke-WebRequest -Uri $ClientPageUrl -Method GET -ErrorAction Stop
         }
         
@@ -59,19 +70,152 @@ function Get-LoggedInUser {
     }
 }
 
+function Get-LatestGitHubRelease {
+    
+    try {
+        $ApiUrl = "https://api.github.com/repos/saddexed/llogin/releases/latest"
+        $Response = Invoke-RestMethod -Uri $ApiUrl -Method GET -ErrorAction Stop
+        
+        return @{
+            Version = $Response.tag_name -replace '^v', ''
+            ReleaseUrl = $Response.html_url
+            DownloadUrl = $Response.zipball_url
+            PublishedAt = $Response.published_at
+            Body = $Response.body
+        }
+    } catch {
+        Write-ColorOutput "Error checking for updates: $($_.Exception.Message)" Red
+        return $null
+    }
+}
+
+function Compare-Versions {
+    param(
+        [string]$CurrentVersion,
+        [string]$LatestVersion
+    )
+    
+    try {
+        $current = [version]$CurrentVersion
+        $latest = [version]$LatestVersion
+        
+        if ($latest -gt $current) {
+            return 1  # Update available
+        } elseif ($latest -eq $current) {
+            return 0  # Same version
+        } else {
+            return -1 # Current is newer
+        }
+    } catch {
+        # Fallback to string comparison if version parsing fails
+        return [string]::Compare($LatestVersion, $CurrentVersion)
+    }
+}
+
+function Invoke-Update {
+    $LatestRelease = Get-LatestGitHubRelease
+    
+    if (-not $LatestRelease) {
+        Write-ColorOutput "Unable to check for updates. Please check your internet connection." Red
+        return $false
+    }
+    
+    $LatestVersion = $LatestRelease.Version
+    $VersionComparison = Compare-Versions $CurrentVersion $LatestVersion
+    
+    if ($VersionComparison -le 0) {
+        Write-ColorOutput "You're already running the latest version ($CurrentVersion)" Green
+        return $true
+    }
+    
+    # Show version information and prompt for update
+    Write-ColorOutput "A new version is available!" Cyan
+    Write-ColorOutput "Current Version: $CurrentVersion" Yellow
+    Write-ColorOutput "Latest Version: $LatestVersion" Green
+    
+    # Prompt user to confirm update
+    $prompt = Read-Host "Do you want to download and install the update? (y/N)"
+    if ($prompt -notmatch '^[Yy]$') {
+        return $false
+    }
+    
+    Write-Host "Updating from $CurrentVersion to $LatestVersion..." -ForegroundColor Yellow
+    
+    try {
+        $TempDir = Join-Path $env:TEMP "llogin-update-$([System.Guid]::NewGuid().ToString())"
+        $ZipPath = Join-Path $TempDir "llogin-latest.zip"
+        
+        New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
+        
+        Write-ColorOutput "Downloading latest version..." Cyan
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            Invoke-WebRequest -Uri $LatestRelease.DownloadUrl -OutFile $ZipPath -ErrorAction Stop
+        } else {
+            Invoke-WebRequest -Uri $LatestRelease.DownloadUrl -OutFile $ZipPath -ErrorAction Stop
+        }
+        
+        Write-ColorOutput "Extracting update..." Cyan
+        Expand-Archive -Path $ZipPath -DestinationPath $TempDir -Force
+        
+        # Find the extracted folder (GitHub releases create a folder with repo name and commit hash)
+        $ExtractedFolders = Get-ChildItem -Path $TempDir -Directory
+        $SourceFolder = $ExtractedFolders | Where-Object { $_.Name -like "*llogin*" } | Select-Object -First 1
+        
+        if (-not $SourceFolder) {
+            throw "Could not find llogin files in the downloaded archive"
+        }
+        
+        $NewScriptPath = Join-Path $SourceFolder.FullName "llogin.ps1"
+        
+        if (-not (Test-Path $NewScriptPath)) {
+            throw "llogin.ps1 not found in the downloaded archive"
+        }
+        
+        # Backup current script
+        $BackupPath = "$PSCommandPath.backup"
+        Write-ColorOutput "Creating backup..." Yellow
+        Copy-Item -Path $PSCommandPath -Destination $BackupPath -Force
+        
+        # Replace current script
+        Write-ColorOutput "Installing update..." Green
+        Copy-Item -Path $NewScriptPath -Destination $PSCommandPath -Force
+        
+        # Cleanup
+        Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+        
+        Write-ColorOutput "Update completed successfully!" Green
+        Write-ColorOutput "Backup saved to: $BackupPath" Gray
+        Write-Host ""
+        Write-ColorOutput "Run 'llogin -Help' to see any new features." Cyan
+        
+        return $true
+        
+    } catch {
+        Write-ColorOutput "Update failed: $($_.Exception.Message)" Red
+        
+        # Cleanup on error
+        if (Test-Path $TempDir) {
+            Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        
+        return $false
+    }
+}
+
 if ($Help) {
     Write-Host "LLogin - LPU Wifi Autologin" -ForegroundColor Cyan
     Write-Host "================================" -ForegroundColor Cyan
     Write-Host "Usage:" -ForegroundColor Yellow
     Write-Host "  llogin                          Login with stored/default credentials" -ForegroundColor White
     Write-Host "  llogin <username> <password>    Login with specified credentials" -ForegroundColor White
-    Write-Host "  llogin -h, -Help                Show this help message" -ForegroundColor White
-    Write-Host "  llogin -l, -Logout              Logout" -ForegroundColor White
-    Write-Host "  llogin -set, -SetCreds          Store default credentials" -ForegroundColor White
-    Write-Host "  llogin -show, -ShowCreds        Show current credential status" -ForegroundColor White
-    Write-Host "  llogin -clear, -ClearCreds      Remove stored credentials" -ForegroundColor White
-    Write-Host "  llogin -stop                    Stop and disable the scheduled task" -ForegroundColor White
+    Write-Host "  llogin -h, -help                Shows this help message" -ForegroundColor White
+    Write-Host "  llogin -l, -logout              Logout" -ForegroundColor White
+    Write-Host "  llogin -set, -setcreds          Store default credentials" -ForegroundColor White
+    Write-Host "  llogin -show, -showcreds        Show current credential status" -ForegroundColor White
+    Write-Host "  llogin -clear, -clearcreds      Remove stored credentials" -ForegroundColor White
     Write-Host "  llogin -start                   Start and enable the scheduled task" -ForegroundColor White
+    Write-Host "  llogin -stop                    Stop and disable the scheduled task" -ForegroundColor White
+    Write-Host "  llogin -u, -update              Check for updates and optionally install" -ForegroundColor White
     exit 0
 }
 
@@ -349,7 +493,6 @@ function Invoke-Login {
         if ($PSVersionTable.PSVersion.Major -ge 6) {
             $Response = Invoke-WebRequest -Uri $LoginUrl -Method POST -Body $FormData -SkipCertificateCheck
         } else {
-            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
             $Response = Invoke-WebRequest -Uri $LoginUrl -Method POST -Body $FormData 
         }
         
@@ -372,8 +515,7 @@ function Invoke-Login {
 
 function Invoke-Logout {
     param(
-        [string]$User,
-        [switch]$SaveResponseHtml
+        [string]$User
     )
     $FormData = "mode=193&username=${User}%40lpu.com&logout=Logout"
     $CommonHeaders = @{ 
@@ -389,7 +531,6 @@ function Invoke-Logout {
         if ($PSVersionTable.PSVersion.Major -ge 6) {
             $resp = Invoke-WebRequest -Uri $LogoutUrl -Method POST -Body $FormData -Headers $CommonHeaders -ContentType 'application/x-www-form-urlencoded' -SkipCertificateCheck -ErrorAction Stop
         } else {
-            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
             $resp = Invoke-WebRequest -Uri $LogoutUrl -Method POST -Body $FormData -Headers $CommonHeaders -ContentType 'application/x-www-form-urlencoded' -ErrorAction Stop
         }
         if (Test-LogoutSuccess -Content $resp.Content) {
@@ -398,7 +539,6 @@ function Invoke-Logout {
             return $true
         } else {
             Write-ColorOutput "Did not detect logout success in response from $LogoutUrl" Yellow
-            if ($SaveResponseHtml) { $resp.Content | Out-File -FilePath 'response.html' -Encoding UTF8 }
         }
     } catch {
         Write-ColorOutput "Error contacting 10.10.0.1 : $($_.Exception.Message)" Red
@@ -408,13 +548,22 @@ function Invoke-Logout {
     return $false
 }
 
+if ($Update) {
+    $UpdateResult = Invoke-Update
+    if ($UpdateResult) {
+        exit 0
+    } else {
+        exit 1
+    }
+}
+
 if (-not (Get-CurrentNetwork)) {
     exit 1
 }
 
 if ($Logout) {
-    $LogoutResult = Invoke-Logout -User $Username -SaveResponseHtml:$SaveResponseHtml
-
+    $Username = Get-LoggedInUser
+        $LogoutResult = Invoke-Logout -User $Username
     if ($LogoutResult) {
         exit 0
     } else {
