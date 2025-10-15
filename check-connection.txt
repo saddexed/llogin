@@ -1,0 +1,10 @@
+2025-10-15 06:26:02 - Monitor started for user: 26775
+2025-10-15 06:27:05 - Connection check failed (Attempt 1/5) to 8.8.8.8
+2025-10-15 06:27:09 - Connection check failed (Attempt 2/5) to 8.8.8.8
+2025-10-15 06:27:13 - Connection check failed (Attempt 3/5) to 8.8.8.8
+2025-10-15 06:27:17 - Connection check failed (Attempt 4/5) to 8.8.8.8
+2025-10-15 06:27:21 - Connection check failed (Attempt 5/5) to 8.8.8.8
+2025-10-15 06:27:21 - Connection lost for 5 attempts - attempting login
+2025-10-15 06:27:24 - Login attempt 1 of 10
+2025-10-15 06:27:25 - Login successful - verifying connection
+2025-10-15 06:27:27 - Connection verified to 8.8.8.8

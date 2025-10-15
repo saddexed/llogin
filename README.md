@@ -69,6 +69,30 @@ llogin -start
 llogin -stop
 ```
 
+### Background Monitoring Mode
+
+Run the script in continuous monitoring mode to automatically detect connection loss and attempt re-login:
+
+```powershell
+# Start monitoring with stored credentials
+llogin -monitor
+
+# Start monitoring with specific credentials
+llogin -monitor username password
+```
+
+**How it works:**
+- Checks internet connection to `1.1.1.1` (Cloudflare DNS) every second
+- If connection fails for **3 consecutive attempts**, automatically triggers login
+- Attempts up to 10 login retries until connection is restored
+- Logs all activity to `check-connection.txt` in the installation directory
+- Runs indefinitely until stopped with `Ctrl+C`
+
+**Use Cases:**
+- Keep connection alive during long work sessions
+- Auto-recover from network drops
+- Monitor connection reliability
+
 ## Command Reference
 
 | Command | Description | Admin Required |
@@ -82,6 +106,9 @@ llogin -stop
 | `llogin -l` | Logout | No |
 | `llogin -start` | Enable automatic login task | Yes |
 | `llogin -stop` | Disable automatic login task | Yes |
+| `llogin -monitor` | Run background connection monitor | No |
+| `llogin -u` | Check for updates | No |
+| `llogin -v` | Show version information | No |
 
 ## Credential Storage Priority
 

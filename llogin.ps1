@@ -9,9 +9,10 @@ param(
     [switch]$ShowCreds,
     [switch]$ClearCreds,
     [switch]$Update,
-    [switch]$Version
+    [switch]$Version,
+    [switch]$Monitor
 )
-$CurrentVersion = "1.0.1"
+$CurrentVersion = "1.0.2"
 if ($Version) {
     Write-Host "llogin version $CurrentVersion" -ForegroundColor Cyan
     exit 0
@@ -216,6 +217,7 @@ if ($Help) {
     Write-Host "  llogin -start                   Start and enable the scheduled task" -ForegroundColor White
     Write-Host "  llogin -stop                    Stop and disable the scheduled task" -ForegroundColor White
     Write-Host "  llogin -u, -update              Check for updates and optionally install" -ForegroundColor White
+    Write-Host "  llogin -monitor                 Run in background monitoring mode" -ForegroundColor White
     exit 0
 }
 
@@ -548,6 +550,139 @@ function Invoke-Logout {
     return $false
 }
 
+function Test-InternetConnection {
+    try {
+        # Check connection to Google DNS
+        $TestUrl = "https://1.1.1.1/"
+        
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            $result = Invoke-WebRequest -Uri $TestUrl -Method Head -TimeoutSec 3 -UseBasicParsing -SkipCertificateCheck -ErrorAction Stop
+        } else {
+            $result = Invoke-WebRequest -Uri $TestUrl -Method Head -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop
+        }
+        if ($result.StatusCode -eq 200) {
+            return $true
+        }
+        return $false
+    } catch {
+        return $false
+    }
+}
+
+function Write-ConnectionLog {
+    param(
+        [string]$Message
+    )
+    
+    $LogPath = if ($PSScriptRoot) { 
+        Join-Path $PSScriptRoot "check-connection.txt" 
+    } else { 
+        Join-Path $env:LOCALAPPDATA "Programs\llogin\check-connection.txt" 
+    }
+    
+    $Timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $LogMessage = "$Timestamp - $Message"
+    Add-Content -Path $LogPath -Value $LogMessage
+}
+
+function Start-ConnectionMonitor {
+    param(
+        [string]$Username,
+        [string]$Password
+    )
+    
+    Write-ColorOutput "Starting connection monitor..." Cyan
+    Write-ColorOutput "Checking connection to 1.1.1.1 every second..." Gray
+    Write-ColorOutput "Will attempt login after 3 consecutive failed checks" Gray
+    Write-ColorOutput "Press Ctrl+C to stop monitoring" Yellow
+    Write-Host ""
+    
+    $FailedAttempts = 0
+    $MaxFailedAttempts = 3
+    $IsDisconnected = $false
+    $CheckInterval = 1 # seconds
+    
+    # Log monitoring start
+    Write-LogEntry -Username $Username -Action "Monitor" -Status "started"
+    Write-ConnectionLog "Monitor started for user: $Username"
+    
+    while ($true) {
+        try {
+            $HasConnection = Test-InternetConnection
+            $Timestamp = Get-Date -Format 'HH:mm:ss'
+            
+            if ($HasConnection) {
+                if ($IsDisconnected) {
+                    Write-ColorOutput "[$Timestamp] Connection restored!" Green
+                    Write-LogEntry -Username $Username -Action "Monitor" -Status "connection restored"
+                    Write-ConnectionLog "Connection restored to 1.1.1.1"
+                    $IsDisconnected = $false
+                }
+                $FailedAttempts = 0
+                Write-Host "[$Timestamp] Connection OK" -ForegroundColor Green -NoNewline
+                Write-Host "`r" -NoNewline
+            } else {
+                $FailedAttempts++
+                Write-Host "[$Timestamp] No connection (Attempt $FailedAttempts/$MaxFailedAttempts)" -ForegroundColor Yellow
+                Write-ConnectionLog "Connection check failed (Attempt $FailedAttempts/$MaxFailedAttempts) to 1.1.1.1"
+                
+                if ($FailedAttempts -ge $MaxFailedAttempts -and -not $IsDisconnected) {
+                    Write-ColorOutput "[$Timestamp] Connection lost for $MaxFailedAttempts attempts. Attempting login..." Red
+                    Write-LogEntry -Username $Username -Action "Monitor" -Status "connection lost - attempting login"
+                    Write-ConnectionLog "Connection lost for $MaxFailedAttempts attempts - attempting login"
+                    $IsDisconnected = $true
+                    
+                    # Attempt login until successful
+                    $LoginAttempts = 0
+                    $MaxLoginAttempts = 10
+                    
+                    while (-not (Test-InternetConnection) -and $LoginAttempts -lt $MaxLoginAttempts) {
+                        $LoginAttempts++
+                        Write-ColorOutput "[$Timestamp] Login attempt $LoginAttempts..." Cyan
+                        Write-ConnectionLog "Login attempt $LoginAttempts of $MaxLoginAttempts"
+                        
+                        $LoginResult = Invoke-Login
+                        
+                        if ($LoginResult) {
+                            Write-ColorOutput "[$Timestamp] Login successful. Verifying connection..." Green
+                            Write-ConnectionLog "Login successful - verifying connection"
+                            Start-Sleep -Seconds 2
+                            
+                            if (Test-InternetConnection) {
+                                Write-ColorOutput "[$Timestamp] Connection verified!" Green
+                                Write-ConnectionLog "Connection verified to 1.1.1.1"
+                                $IsDisconnected = $false
+                                $FailedAttempts = 0
+                                break
+                            }
+                        } else {
+                            Write-ConnectionLog "Login attempt $LoginAttempts failed"
+                        }
+                        
+                        # Wait before next login attempt
+                        Start-Sleep -Seconds 3
+                    }
+                    
+                    if ($LoginAttempts -ge $MaxLoginAttempts) {
+                        Write-ColorOutput "[$Timestamp] Maximum login attempts reached. Continuing to monitor..." Yellow
+                        Write-LogEntry -Username $Username -Action "Monitor" -Status "max login attempts reached"
+                        Write-ConnectionLog "Maximum login attempts ($MaxLoginAttempts) reached - continuing to monitor"
+                    }
+                }
+            }
+            
+            # Wait before next check
+            Start-Sleep -Seconds $CheckInterval
+            
+        } catch {
+            Write-ColorOutput "Error in monitoring loop: $($_.Exception.Message)" Red
+            Write-LogEntry -Username $Username -Action "Monitor" -Status "error - $($_.Exception.Message)"
+            Write-ConnectionLog "Error in monitoring loop: $($_.Exception.Message)"
+            Start-Sleep -Seconds $CheckInterval
+        }
+    }
+}
+
 if ($Update) {
     $UpdateResult = Invoke-Update
     if ($UpdateResult) {
@@ -555,6 +690,29 @@ if ($Update) {
     } else {
         exit 1
     }
+}
+
+if ($Monitor) {
+    # Get credentials for monitoring mode
+    $credentials = Get-Credentials
+    $MonitorUsername = $credentials.Username
+    $MonitorPassword = $credentials.Password
+
+    if (-not $MonitorUsername -or -not $MonitorPassword) {
+        Write-Host "Error: Username and password are required for monitoring mode." -ForegroundColor Red
+        Write-Host "Usage: llogin -Monitor <username> <password>" -ForegroundColor Yellow
+        Write-Host "   or: Use llogin -SetCreds to store credentials first" -ForegroundColor Yellow
+        exit 1
+    }
+    
+    # Check if on LPU network
+    if (-not (Get-CurrentNetwork)) {
+        Write-Host "Warning: Not connected to LPU network. Monitoring will continue anyway..." -ForegroundColor Yellow
+    }
+    
+    # Start monitoring (this will run indefinitely)
+    Start-ConnectionMonitor -Username $MonitorUsername -Password $MonitorPassword
+    exit 0
 }
 
 if (-not (Get-CurrentNetwork)) {
